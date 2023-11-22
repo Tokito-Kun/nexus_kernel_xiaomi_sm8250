@@ -65,9 +65,10 @@ VERBOSE=0
 KERVER=$(make kernelversion)
 
 COMMIT_HEAD=$(git log --oneline -1)
+CI_BRANCH=$(git branch --show-current)
 
 # Date and Time
-DATE=$(TZ=Europe/Lisbon date +"%Y%m%d-%T")
+DATE=$(TZ=Asia/Kolkata date +"%Y%m%d-%T")
 TM=$(date +"%F%S")
 
 # Specify Final Zip Name
@@ -79,14 +80,14 @@ COMPILER=neutron
 
 # Clone ToolChain
 function cloneTC() {
-	
+
 	case $COMPILER in
-	
+
 		proton)
 			git clone --depth=1  https://github.com/kdrag0n/proton-clang.git clang
 			PATH="${KERNEL_DIR}/clang/bin:$PATH"
 			;;
-		
+
 		nexus)
 			git clone --depth=1  https://gitlab.com/Project-Nexus/nexus-clang.git clang
 			PATH="${KERNEL_DIR}/clang/bin:$PATH"
@@ -127,7 +128,7 @@ function cloneTC() {
 			fi
 			PATH="${KERNEL_DIR}/clangB/bin:${KERNEL_DIR}/gcc/bin:${KERNEL_DIR}/gcc32/bin:${PATH}"
 			;;
-			
+
 		zyc)
 		    if [ ! -d clang ]; then
 				mkdir clang
@@ -169,10 +170,10 @@ function cloneTC() {
 		  git clone --depth=1 https://github.com/NotZeetaa/AnyKernel3 -b lmi AnyKernel3
 		fi
 	}
-	
+
 # Export Variables
 function exports() {
-	
+
         # Export KBUILD_COMPILER_STRING
         if [ -d ${KERNEL_DIR}/clang ];
            then
@@ -184,30 +185,15 @@ function exports() {
             then
                export KBUILD_COMPILER_STRING=$(${KERNEL_DIR}/clangB/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
         fi
-        
+
         # Export ARCH and SUBARCH
         export ARCH=arm64
         export SUBARCH=arm64
-               
+
         # KBUILD HOST and USER
         export KBUILD_BUILD_HOST=ArchLinux
-        export KBUILD_BUILD_USER="NotZeeta"
-        
-        # CI
-        if [ "$CI" ]
-           then
-               
-           if [ "$CIRCLECI" ]
-              then
-                  export KBUILD_BUILD_VERSION=${CIRCLE_BUILD_NUM}
-                  export CI_BRANCH=${CIRCLE_BRANCH}
-           elif [ "$DRONE" ]
-	      then
-		  export KBUILD_BUILD_VERSION=${DRONE_BUILD_NUMBER}
-		  export CI_BRANCH=${DRONE_BRANCH}
-           fi
-		   
-        fi
+        export KBUILD_BUILD_USER="Tokito"
+
 	export PROCS=$(nproc --all)
 	export DISTRO=$(source /etc/os-release && echo "${NAME}")
 	}
@@ -223,11 +209,11 @@ function post_msg() {
 	}
 
 function push() {
-	curl -F document=@$1 "https://api.telegram.org/bot$token/sendDocument" \
-	-F chat_id="$chat_id" \
-	-F "disable_web_page_preview=true" \
-	-F "parse_mode=html" \
-	-F caption="$2"
+	python ${KERNEL_DIR}/telegram.py --file "$1" \
+  --token "$token" \
+	--chat "$chat_id" \
+	--mode "HTML" \
+	--caption "$2"
 	}
 
 # Compilation
@@ -235,10 +221,9 @@ function push() {
 METHOD=$3
 
 function compile() {
-START=$(date +"%s")
 	# Push Notification
-	post_msg "<b>$KBUILD_BUILD_VERSION CI Build Triggered</b>%0A<b>Docker OS: </b><code>$DISTRO</code>%0A<b>Kernel Version : </b><code>$KERVER</code>%0A<b>Date : </b><code>$(TZ=Europe/Lisbon date)</code>%0A<b>Device : </b><code>$MODEL [$DEVICE]</code>%0A<b>Pipeline Host : </b><code>$KBUILD_BUILD_HOST</code>%0A<b>Host Core Count : </b><code>$PROCS</code>%0A<b>Compiler Used : </b><code>$KBUILD_COMPILER_STRING</code>%0A<b>Branch : </b><code>$CI_BRANCH</code>%0A<b>Top Commit : </b><a href='$DRONE_COMMIT_LINK'>$COMMIT_HEAD</a>"
-	
+	post_msg "<b>$KBUILD_BUILD_VERSION CI Build Triggered</b>%0A<b>Docker OS: </b><code>$DISTRO</code>%0A<b>Kernel Version : </b><code>$KERVER</code>%0A<b>Date : </b><code>$(TZ=Asia/Kolkata date)</code>%0A<b>Device : </b><code>$MODEL [$DEVICE]</code>%0A<b>Pipeline Host : </b><code>$KBUILD_BUILD_HOST</code>%0A<b>Host Core Count : </b><code>$PROCS</code>%0A<b>Compiler Used : </b><code>$KBUILD_COMPILER_STRING</code>%0A<b>Branch : </b><code>$CI_BRANCH</code>%0A<b>Top Commit : </b><a href='$DRONE_COMMIT_LINK'>$COMMIT_HEAD</a>"
+
 	# Compile
 	if [ -d ${KERNEL_DIR}/clang ];
 	   then
@@ -286,7 +271,7 @@ START=$(date +"%s")
 	       CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
 	       V=$VERBOSE 2>&1 | tee error.log
 	fi
-	
+
 	# Verify Files
 	if ! [ -a "$IMAGE" ];
 	   then
@@ -294,9 +279,8 @@ START=$(date +"%s")
 	       exit 1
 	fi
 	}
-	
+
 function compile_ksu() {
-START=$(date +"%s")
 	# Compile
 	if [ -d ${KERNEL_DIR}/clang ];
 	   then
@@ -344,7 +328,7 @@ START=$(date +"%s")
 	       CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
 	       V=$VERBOSE 2>&1 | tee error.log
 	fi
-	
+
 	# Verify Files
 	if ! [ -a "$IMAGE" ];
 	   then
@@ -381,14 +365,15 @@ function zipping() {
 
 cloneTC
 exports
+START=$(date +"%s")
 compile
-END=$(date +"%s")
-DIFF=$(($END - $START))
 move
 # KernelSU
 echo "CONFIG_KSU=y" >> $(pwd)/arch/arm64/configs/$DEFCONFIG
 compile_ksu
 move_ksu
+END=$(date +"%s")
+DIFF=$(($END - $START))
 zipping
 if [ "$BUILD" = "local" ]; then
 # Discard KSU changes in defconfig
